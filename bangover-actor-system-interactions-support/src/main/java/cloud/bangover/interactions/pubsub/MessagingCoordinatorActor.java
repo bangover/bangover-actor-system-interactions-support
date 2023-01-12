@@ -22,7 +22,7 @@ class MessagingCoordinatorActor extends Actor<Object> {
   }
 
   @Override
-  protected void receive(Message<Object> message) throws Throwable {
+  protected void receive(Message<Object> message) throws Exception {
     message.whenIsMatchedTo(Subscribe.class, command -> {
       command.subscribe(subscribtions);
     });

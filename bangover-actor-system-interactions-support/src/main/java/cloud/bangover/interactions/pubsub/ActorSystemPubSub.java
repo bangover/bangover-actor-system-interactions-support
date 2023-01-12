@@ -106,7 +106,7 @@ public class ActorSystemPubSub<T> implements PubSub<T> {
     }
 
     @Override
-    protected void receive(@NonNull Message<M> message) throws Throwable {
+    protected void receive(@NonNull Message<M> message) throws Exception {
       message.whenIsMatchedTo(messageType, body -> {
         subscriber.onMessage(body);
       });

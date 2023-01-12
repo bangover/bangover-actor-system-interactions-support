@@ -5,7 +5,6 @@ import cloud.bangover.actors.ActorAddress;
 import cloud.bangover.actors.ActorName;
 import cloud.bangover.actors.ActorSystem;
 import cloud.bangover.actors.Message;
-import cloud.bangover.async.promise.AsyncResolverProxy;
 import cloud.bangover.async.promises.Deferred;
 import cloud.bangover.async.promises.Promise;
 import cloud.bangover.async.promises.Promises;
@@ -48,7 +47,7 @@ public class ActorSystemStreamer implements Streamer {
 
     public void complete(Message<Object> message, Long count);
 
-    public void fail(Message<Object> message, Throwable error);
+    public void fail(Message<Object> message, Exception error);
   }
 
   @RequiredArgsConstructor
@@ -123,7 +122,7 @@ public class ActorSystemStreamer implements Streamer {
 
     @RequiredArgsConstructor
     private final class Fail implements StreamCommand<T> {
-      private final Throwable error;
+      private final Exception error;
 
       @Override
       public void apply(Transmitter<T> transmitter, Message<Object> message) {
@@ -137,13 +136,12 @@ public class ActorSystemStreamer implements Streamer {
       public StreamingActor(@NonNull Context context, @NonNull Source<T> source,
           @NonNull Destination<T> destination, @NonNull Deferred<Stat> resolver) {
         super(context);
-        this.transmitter =
-            new StreamingTranmitter(source, destination, new AsyncResolverProxy<>(resolver));
+        this.transmitter = new StreamingTranmitter(source, destination, resolver);
       }
 
       @Override
       @SuppressWarnings("unchecked")
-      protected void receive(Message<Object> message) throws Throwable {
+      protected void receive(Message<Object> message) throws Exception {
         message.whenIsMatchedTo(StreamCommand.class,
             command -> command.apply(transmitter, message));
       }
@@ -154,7 +152,7 @@ public class ActorSystemStreamer implements Streamer {
         return new FaultResolver<Object>() {
           @Override
           public void resolveError(LifecycleController lifecycle, Message<Object> message,
-              Throwable error) {
+              Exception error) {
             tell(message.map(body -> new Fail(error)));
             original.resolveError(lifecycle, message, error);
           }
@@ -186,14 +184,18 @@ public class ActorSystemStreamer implements Streamer {
 
         @Override
         public void complete(Message<Object> message, Long count) {
+          destination.release();
+          source.release();
           resolver.resolve(new CurrentStatus(totalSize));
-          completeStreaming();
+          stop(self());
         }
 
         @Override
-        public void fail(Message<Object> message, Throwable error) {
+        public void fail(Message<Object> message, Exception error) {
+          destination.release();
+          source.release();
           resolver.reject(error);
-          completeStreaming();
+          stop(self());
         }
 
         private void updateTotalSize(int transmittedSize) {
@@ -204,12 +206,6 @@ public class ActorSystemStreamer implements Streamer {
         private void notifyStatusObservers() {
           statusObservers
               .forEach(observer -> observer.onStatusChange(new CurrentStatus(totalSize)));
-        }
-
-        private void completeStreaming() {
-          destination.release();
-          source.release();
-          stop(self());
         }
 
         private DestinationConnection<T> createDestinationConnection(Message<Object> message) {
